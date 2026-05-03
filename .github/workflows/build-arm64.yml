@@ -9,9 +9,6 @@ jobs:
   build-arm64:
     name: Compile Linux ARM64
     runs-on: ubuntu-24.04-arm
-    env:
-      CC: gcc-13
-      CXX: g++-13
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -21,9 +18,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build gcc-13 g++-13 curl zip unzip tar pkg-config git
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100
-          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100
+          sudo apt-get install -y cmake ninja-build gcc-13 g++-13 curl zip unzip tar pkg-config git mono-complete
 
       - name: Get vcpkg baseline
         run: |
@@ -42,16 +37,26 @@ jobs:
           max-size: "2G"
           key: ccache-arm64-release
 
+      - name: Configure CMake
+        env:
+          CC: gcc-13
+          CXX: g++-13
+          VCPKG_ROOT: ${{ env.RUNVCPKG_VCPKG_ROOT }}
+        run: |
+          cmake -S . -B build/release \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DCMAKE_C_COMPILER=gcc-13 \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -G Ninja \
+            -DTOGGLE_BIN_FOLDER=ON
+
       - name: Build
-        uses: lukka/run-cmake@v10
-        with:
-          configurePreset: linux-release
-          buildPreset: linux-release
-          configurePresetAdditionalArgs: "['-DTOGGLE_BIN_FOLDER=ON']"
+        run: cmake --build build/release --config Release --parallel $(nproc)
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: canary-arm64-linux-release
-          path: build/linux-release/bin/
+          path: build/release/bin/
           retention-days: 30
