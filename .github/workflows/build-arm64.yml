@@ -1,0 +1,57 @@
+name: Build ARM64
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-arm64:
+    name: Compile Linux ARM64
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build gcc-13 g++-13 curl zip unzip tar pkg-config
+          sudo ln -sf /usr/bin/ninja /usr/bin/ninja-build
+
+      - name: Get vcpkg baseline
+        id: vcpkg-baseline
+        run: |
+          vcpkgCommitId=$(grep '.builtin-baseline' vcpkg.json | awk -F: '{print $2}' | tr -d '," ')
+          echo "VCPKG_GIT_COMMIT_ID=$vcpkgCommitId" >> "$GITHUB_ENV"
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitURL: "https://github.com/microsoft/vcpkg.git"
+          vcpkgGitCommitId: ${{ env.VCPKG_GIT_COMMIT_ID }}
+
+      - name: CCache
+        uses: hendrikmuhs/ccache-action@v1.2.20
+        with:
+          max-size: "2G"
+          key: ccache-arm64-release
+
+      - name: Build
+        env:
+          CC: gcc-13
+          CXX: g++-13
+        uses: lukka/run-cmake@v10
+        with:
+          configurePreset: linux-release
+          buildPreset: linux-release
+          configurePresetAdditionalArgs: "['-DTOGGLE_BIN_FOLDER=ON']"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: canary-arm64-linux-release
+          path: build/linux-release/bin/
+          retention-days: 30
