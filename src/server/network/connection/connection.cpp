@@ -112,6 +112,7 @@ void Connection::accept(Protocol_ptr protocolPtr) {
 }
 
 void Connection::acceptInternal(bool toggleParseHeader) {
+	g_logger().info("[Connection::acceptInternal] New connection, toggleParseHeader={}", toggleParseHeader);
 	readTimer.expires_from_now(std::chrono::seconds(CONNECTION_READ_TIMEOUT));
 	readTimer.async_wait([self = std::weak_ptr<Connection>(shared_from_this())](const std::error_code &error) { Connection::handleTimeout(self, error); });
 
@@ -191,9 +192,11 @@ void Connection::parseHeader(const std::error_code &error) {
 		if (error != asio::error::operation_aborted && error != asio::error::eof && error != asio::error::connection_reset) {
 			g_logger().debug("[Connection::parseHeader] - Read error: {}", error.message());
 		}
+		g_logger().info("[Connection::parseHeader] Error on read: {} ({})", error.message(), error.value());
 		close(FORCE_CLOSE);
 		return;
 	} else if (connectionState == CONNECTION_STATE_CLOSED) {
+		g_logger().info("[Connection::parseHeader] State is CLOSED");
 		return;
 	}
 
@@ -214,7 +217,10 @@ void Connection::parseHeader(const std::error_code &error) {
 		size = (size * 8) + 4;
 	}
 
+	g_logger().info("[Connection::parseHeader] Raw header size={}, protocol={}, effective size={}", m_msg.getLengthHeader(), protocol != nullptr, size);
+
 	if (size == 0 || size > INPUTMESSAGE_MAXSIZE) {
+		g_logger().info("[Connection::parseHeader] Size out of range: {} (max {})", size, INPUTMESSAGE_MAXSIZE);
 		close(FORCE_CLOSE);
 		return;
 	}
@@ -261,6 +267,7 @@ void Connection::parsePacket(const std::error_code &error) {
 			}
 
 			uint32_t recvChecksum = m_msg.get<uint32_t>();
+			g_logger().info("[Connection::parsePacket] First message: checksum match={}, recvChecksum={}, calcChecksum={}", recvChecksum == checksum, recvChecksum, checksum);
 			if (recvChecksum != checksum) {
 				// it might not have been the checksum, step back
 				m_msg.skipBytes(-CHECKSUM_LENGTH);
@@ -269,6 +276,7 @@ void Connection::parsePacket(const std::error_code &error) {
 			// Game protocol has already been created at this point
 			protocol = service_port->make_protocol(recvChecksum == checksum, m_msg, shared_from_this());
 			if (!protocol) {
+				g_logger().info("[Connection::parsePacket] make_protocol returned null, closing");
 				close(FORCE_CLOSE);
 				return;
 			}
